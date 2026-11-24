@@ -97,7 +97,32 @@ class ReflexAgent(Agent):
         newGrieverPositions = successorGameState.getGrieverPositions()
 
         "*** YOUR CODE HERE ***"
-        return successorGameState.getScore()
+        if successorGameState.isWin():
+            return successorGameState.getScore()
+        if successorGameState.isLose():
+            return successorGameState.getScore()
+
+        # Distance to the current target: nearest code piece, or the exit once open.
+        targets = list(newKeys) if newKeys else [successorGameState.getExit()]
+        targetDist = min(successorGameState.mazeDistance(newPos, t) for t in targets)
+
+        score = successorGameState.getScore()
+        # Large weight on remaining keys keeps the value from dropping when a piece
+        # is picked up (distance to the next target may jump at that moment).
+        value = score - 2.0 * targetDist - 60.0 * len(newKeys)
+
+        # Danger: only Grievers that are close matter.
+        for g in newGrieverPositions:
+            d = successorGameState.mazeDistance(newPos, g)
+            if d <= 1:
+                value -= 1000
+            elif d <= 4:
+                value -= 60.0 / d
+
+        # Standing still is almost never useful.
+        if action == STOP:
+            value -= 3
+        return value
 
 
 def scoreEvaluationFunction(currentGameState):
@@ -321,10 +346,44 @@ def betterEvaluationFunction(currentGameState):
     Unlike the Q1 evaluation function, this one scores a STATE, not an
     action. Describe what it does here and in your report:
 
-    DESCRIPTION: <write something here>
+    DESCRIPTION: score minus a greedy key-hunt tour estimate (nearest key chain, then exit),
+    minus a small per-remaining-key term, minus a penalty for Grievers within 3 cells.
     """
     "*** YOUR CODE HERE ***"
-    util.raiseNotDefined()
+    state = currentGameState
+    if state.isWin() or state.isLose():
+        return state.getScore()
+
+    pos = state.getRunnerPosition()
+    keys = list(state.getKeys())
+    exitPos = state.getExit()
+    dist = state.mazeDistance
+
+    # Greedy tour estimate: visit the nearest remaining piece again and again,
+    # then go to the exit. This is the "key-hunt" idea from Project 1.
+    tour = 0
+    cur = pos
+    remaining = keys[:]
+    while remaining:
+        nxt = min(remaining, key=lambda k: dist(cur, k))
+        tour += dist(cur, nxt)
+        cur = nxt
+        remaining.remove(nxt)
+    tour += dist(cur, exitPos)
+
+    # The score already contains +50 per collected piece, so progress never
+    # lowers the value; the tour length rewards moving toward the goal.
+    value = state.getScore() - 1.5 * tour - 10.0 * len(keys)
+
+    # Only nearby Grievers are dangerous.
+    for g in state.getGrieverPositions():
+        d = dist(pos, g)
+        if d <= 1:
+            value -= 300
+        elif d <= 3:
+            value -= 40.0 / d
+
+    return value
 
 
 # Abbreviation
